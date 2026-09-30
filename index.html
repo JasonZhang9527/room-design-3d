@@ -55,7 +55,10 @@ main{position:relative;overflow:hidden;background:var(--paper)}
 #plan{width:100%;height:100%;display:block;touch-action:none;cursor:default}
 #plan.panning{cursor:grabbing}
 #plan.tool-measure{cursor:crosshair}
+#plan.tool-build{cursor:crosshair}
+#plan.tool-door{cursor:crosshair}
 #plan .wall{pointer-events:none}
+#plan .added-wall{pointer-events:all;cursor:pointer}
 #plan.tool-demolish .wall{pointer-events:all;cursor:pointer}
 #plan.tool-demolish .wall:hover{fill:#d9894f}
 #plan.tool-select .room:hover{opacity:.82}
@@ -240,6 +243,8 @@ main.drawer-panel #fab{opacity:0;visibility:hidden}
       <button class="btn on" data-tool="select" title="选择 / 移动 (V)" data-en-title="Select / Move (V)" data-en="Select">选择</button>
       <button class="btn" data-tool="measure" title="测量 (M)" data-en-title="Measure (M)" data-en="Measure">测量</button>
       <button class="btn" data-tool="demolish" title="拆改非承重墙 (X)" data-en-title="Demolish non-bearing walls (X)" data-en="Demolish">拆改墙体</button>
+      <button class="btn" data-tool="build" title="新建墙体 (W)" data-en-title="Build wall (W)" data-en="Build wall">新建墙体</button>
+      <button class="btn" data-tool="door" title="安装门 (D)" data-en-title="Place door (D)" data-en="Place door">安装门</button>
     </div>
     <div class="grp only2d">
       <button class="btn" id="zoomOut" title="缩小" data-en-title="Zoom out">−</button>
@@ -430,7 +435,7 @@ function defaultFurniture(){ return structuredClone(currentPlan?.furniture || []
 
 function defaultState(){
   const rooms = {}; ROOMS.forEach(r => rooms[r.id] = {name:r.name, mat:r.mat});
-  return {furniture:defaultFurniture(), rooms, demolished:[], removedOpenings:[], measures:[]};
+  return {furniture:defaultFurniture(), rooms, demolished:[], removedOpenings:[], addedWalls:[], addedDoors:[], measures:[]};
 }
 
 const STORE = 'huxing-design-v1';
@@ -446,7 +451,7 @@ const svg = $('#plan');
 
 /* ======================= 状态 / 历史 / 存储 ======================= */
 let state = defaultState();
-const ui = {tool:'select', sel:null, mA:null, mCur:null,
+const ui = {tool:'select', sel:null, mA:null, mCur:null, wallA:null, wallCur:null,
   layers:{dims:true, labels:true, furn:true, grid:false, bearing:false, wallSnap:true}};
 let view = {x0:0, y0:0, s:.06};
 const undoStack = [], redoStack = [];
@@ -457,8 +462,28 @@ function commit(before){ undoStack.push(before); if (undoStack.length > 150) und
 function mutate(fn){ const b = snap(); fn(); commit(b); renderAll(); }
 function undo(){ if (!undoStack.length) return toast(tr('没有可撤销的操作', 'Nothing to undo')); redoStack.push(snap()); state = JSON.parse(undoStack.pop()); validateSel(); save(); renderAll(); }
 function redo(){ if (!redoStack.length) return; undoStack.push(snap()); state = JSON.parse(redoStack.pop()); validateSel(); save(); renderAll(); }
-function validateSel(){ if ((ui.sel?.kind==='furn' && !getF(ui.sel.id)) || (ui.sel?.kind==='opening' && openingRemoved(ui.sel.id))) ui.sel = null; }
+function validateSel(){ if ((ui.sel?.kind==='furn' && !getF(ui.sel.id)) || (ui.sel?.kind==='opening' && openingRemoved(ui.sel.id)) || (ui.sel?.kind==='wall' && !getAddedWall(ui.sel.id)) || (ui.sel?.kind==='addedDoor' && !getAddedDoor(ui.sel.id))) ui.sel = null; }
 const getF = id => state.furniture.find(f => f.id === id);
+const getAddedWall = id => (state.addedWalls || []).find(w => w.id === id);
+const getAddedDoor = id => (state.addedDoors || []).find(d => d.id === id);
+function addedDoorGeometry(d){
+  const c=d.vertical?[0,1]:[1,0], side=d.openSide==='right'?1:-1, o=d.vertical?[side,0]:[0,side], h=[d.x-c[0]*d.width/2,d.y-c[1]*d.width/2];
+  return {...d,name:tr('新安装门','New door'),len:d.width,c,o,h,rect:d.vertical?[d.x-50,d.y-d.width/2,d.x+50,d.y+d.width/2]:[d.x-d.width/2,d.y-50,d.x+d.width/2,d.y+50]};
+}
+function snapDoor(d,x,y){
+  let best=null,dist=200; const walls=WALLS.filter((w,i)=>!state.demolished.includes('w'+i)).concat((state.addedWalls||[]).map(addedWallRect));
+  for(const r of walls){const vertical=r[3]-r[1]>r[2]-r[0],cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2;const v=vertical?Math.hypot(x-cx,Math.max(r[1]-y,0,y-r[3])):Math.hypot(y-cy,Math.max(r[0]-x,0,x-r[2]));if(v<dist){dist=v;best={vertical,cx,cy};}}
+  d.x=Math.round(x/10)*10;d.y=Math.round(y/10)*10;if(best){d.vertical=best.vertical;if(best.vertical)d.x=best.cx;else d.y=best.cy;}
+}
+function wallDoorPieces(r){
+  const vertical=r[3]-r[1]>r[2]-r[0],axis=vertical?1:0,end=axis+2;let pieces=[r.slice(0,4)],holes=[];
+  for(const d of state.addedDoors||[]){if(d.vertical!==vertical)continue;const cross=vertical?d.x:d.y;if(cross<r[1-axis]||cross>r[3-axis])continue;const center=vertical?d.y:d.x,lo=Math.max(r[axis],center-d.width/2),hi=Math.min(r[end],center+d.width/2);if(hi<=lo)continue;const hole=r.slice(0,4);hole[axis]=lo;hole[end]=hi;holes.push(hole);pieces=pieces.flatMap(p=>{if(hi<=p[axis]||lo>=p[end])return [p];const out=[];if(lo>p[axis]){const a=p.slice();a[end]=lo;out.push(a);}if(hi<p[end]){const b=p.slice();b[axis]=hi;out.push(b);}return out;});}
+  return {pieces,holes};
+}
+function addedWallRect(w){
+  const t=w.thickness/2;
+  return w.x0===w.x1 ? [w.x0-t,Math.min(w.y0,w.y1),w.x0+t,Math.max(w.y0,w.y1)] : [Math.min(w.x0,w.x1),w.y0-t,Math.max(w.x0,w.x1),w.y0+t];
+}
 
 // Stable IDs use the floorplan door/slide array indices, like wall IDs.
 const openingRemoved = id => (state.removedOpenings || []).includes(id);
@@ -484,7 +509,7 @@ const bbox = poly => { const xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]); ret
 function aabb(f){ const a = f.rot*Math.PI/180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)); return {hw:f.w/2*c + f.d/2*s, hh:f.w/2*s + f.d/2*c}; }
 const fmt = (n, d=2) => n.toFixed(d);
 const norm = a => ((Math.round(a) % 360) + 360) % 360;
-function snapRects(){ return WALLS.filter((w,i) => !state.demolished.includes('w'+i)).concat(WINS); }
+function snapRects(){ return WALLS.filter((w,i) => !state.demolished.includes('w'+i)).concat((state.addedWalls || []).map(addedWallRect),WINS); }
 
 /* ======================= 颜色 / 材质图案 ======================= */
 function hex2rgb(h){ h = h.replace('#',''); if (h.length===3) h = h.split('').map(c=>c+c).join(''); const n = parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
@@ -646,13 +671,15 @@ function renderFurn(){
 }
 
 function renderWalls(){
-  $('#gWalls').innerHTML = WALLS.map((w,i) => {
+  let s = WALLS.map((w,i) => {
     const [x0,y0,x1,y1,k] = w, id = 'w'+i, dem = state.demolished.includes(id);
     let fill = k==='b' ? (ui.layers.bearing ? '#b8412c' : '#26241f') : k==='low' ? '#e9e3d8' : k==='e' ? '#8f897d' : '#a7a195';
     let ex = k==='low' ? 'stroke="#8f897d" stroke-width="1" vector-effect="non-scaling-stroke"' : '';
     if (dem) return '';
-    return `<rect class="wall" data-wall="${id}" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="${fill}" ${ex}/>`;
+    return wallDoorPieces(w).pieces.map(r=>`<rect class="wall" data-wall="${id}" x="${r[0]}" y="${r[1]}" width="${r[2]-r[0]}" height="${r[3]-r[1]}" fill="${fill}" ${ex}/>`).join('');
   }).join('');
+  s += (state.addedWalls || []).map(w=>wallDoorPieces(addedWallRect(w)).pieces.map(([x0,y0,x1,y1])=>`<rect class="wall added-wall" data-added-wall="${w.id}" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#8d765f"><title>${tr('新建墙体','New wall')} · ${Math.round(Math.hypot(w.x1-w.x0,w.y1-w.y0))} mm</title></rect>`).join('')).join('');
+  $('#gWalls').innerHTML = s;
 }
 
 function renderOpenings(){
@@ -665,9 +692,9 @@ function renderOpenings(){
     else [1/3,2/3].forEach(t => s += `<line x1="${x0+w*t}" y1="${y0}" x2="${x0+w*t}" y2="${y1}" ${WS}/>`);
   });
   const DS = 'stroke="#3d3a34" stroke-width="1" vector-effect="non-scaling-stroke"';
-  DOORS.forEach((d,i) => {
-    if(openingRemoved('d'+i))return;
-    s += `<g class="opening" data-opening="d${i}"><title>${esc(nm(d.name))}</title><rect x="${d.rect[0]}" y="${d.rect[1]}" width="${d.rect[2]-d.rect[0]}" height="${d.rect[3]-d.rect[1]}" fill="transparent" pointer-events="all"/>`;
+  [...DOORS.map((d,i)=>({...d,originalId:'d'+i})),...(state.addedDoors||[]).map(addedDoorGeometry)].forEach(d => {
+    if(d.originalId&&openingRemoved(d.originalId))return;
+    s += `<g class="opening" ${d.originalId?`data-opening="${d.originalId}"`:`data-added-door="${d.id}"`}><title>${esc(nm(d.name))}</title><rect x="${d.rect[0]}" y="${d.rect[1]}" width="${d.rect[2]-d.rect[0]}" height="${d.rect[3]-d.rect[1]}" fill="#fff" pointer-events="all"/>`;
     const [hx,hy] = d.h, L = d.len, T = 40;
     const ox = hx + d.o[0]*L, oy = hy + d.o[1]*L, cx = hx + d.c[0]*L, cy = hy + d.c[1]*L;
     const sweep = d.o[0]*d.c[1] - d.o[1]*d.c[0] > 0 ? 1 : 0;
@@ -736,6 +763,7 @@ function renderMeasure(){
   let s = state.measures.map(m => one(m.a,m.b)).join('');
   if (ui.mA && ui.mCur) s += one(ui.mA, ui.mCur, true);
   if (ui.mA) s += `<circle cx="${ui.mA.x}" cy="${ui.mA.y}" r="${3*k}" fill="#2f5d62"/>`;
+  if (ui.wallA && ui.wallCur){ const a=ui.wallA,b=orthogonalPoint(ui.wallA,ui.wallCur),w={x0:a.x,y0:a.y,x1:b.x,y1:b.y,thickness:100}; const [x0,y0,x1,y1]=addedWallRect(w); s += `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#8d765f" opacity=".65"/><text x="${(a.x+b.x)/2}" y="${(a.y+b.y)/2-12*k}" font-size="${12*k}" text-anchor="middle" fill="#765038" stroke="#fff" stroke-width="${3*k}" paint-order="stroke">${Math.round(Math.hypot(b.x-a.x,b.y-a.y))} mm</text>`; }
   $('#gMeasure').innerHTML = s;
 }
 
@@ -761,6 +789,8 @@ function renderSel(){
   } else if (ui.sel?.kind === 'room'){
     const r = ROOMS.find(r => r.id === ui.sel.id);
     s += `<polygon points="${r.poly.map(p=>p.join(',')).join(' ')}" fill="rgba(181,101,58,.08)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
+  } else if (ui.sel?.kind === 'wall'){
+    const w=getAddedWall(ui.sel.id); if(w){const [x0,y0,x1,y1]=addedWallRect(w);s+=`<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="none" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>`;}
   }
   $('#gSel').innerHTML = s;
 }
@@ -789,6 +819,8 @@ function renderPanel(){
     p.innerHTML=`<section><h3>${esc(nm(d.name || tr('推拉门','Sliding door')))}</h3><p>${tr('删除门时同时拆除门洞上方过梁，可撤销。','Deleting the door also removes its lintel. Undo is available.')}</p><button class="btn danger" id="deleteOpening">${tr('删除门及过梁','Delete door and lintel')}</button></section>`;
     $('#deleteOpening').onclick=deleteSel;return;
   }
+  if (ui.sel?.kind === 'wall'){ const w=getAddedWall(ui.sel.id); if(w){p.innerHTML=wallPanel(w);bindWallPanel(w);return;} }
+  if (ui.sel?.kind === 'addedDoor'){ const d=getAddedDoor(ui.sel.id); if(d){p.innerHTML=doorPanel(d);bindDoorPanel(d);return;} }
   if (ui.sel?.kind === 'room'){ p.innerHTML = roomPanel(ROOMS.find(r => r.id === ui.sel.id)); bindRoomPanel(); return; }
   p.innerHTML = overviewPanel(); bindOverview();
   const removed=state.demolished.map(id=>({kind:'wall',id,name:tr('墙体','Wall')+' '+id})).concat((state.removedOpenings || []).map(id=>({kind:'opening',id,name:getOpening(id)?.name || tr('推拉门','Sliding door')})));
@@ -967,10 +999,33 @@ function bindFurnPanel(f){
   $('#back').onclick = () => select(null);
 }
 
+function wallPanel(w){
+  const vertical=w.x0===w.x1,L=Math.round(Math.hypot(w.x1-w.x0,w.y1-w.y0));
+  return `<section><h3>${tr('新建墙体属性','New Wall')}</h3><div class="form">
+    <label>${tr('起点','Start')} X (mm)<input type="number" id="wX" value="${Math.round(w.x0)}" step="10"></label>
+    <label>${tr('起点','Start')} Y (mm)<input type="number" id="wY" value="${Math.round(w.y0)}" step="10"></label>
+    <label>${tr('长度','Length')} (mm)<input type="number" id="wL" value="${L}" min="100" step="10"></label>
+    <label>${tr('厚度','Thickness')} (mm)<input type="number" id="wT" value="${w.thickness}" min="50" max="1000" step="10"></label>
+    <label>${tr('高度','Height')} (mm)<input type="number" id="wH" value="${w.height}" min="100" max="10000" step="10"></label>
+    <label>${tr('方向','Direction')}<select id="wDir"><option value="h" ${vertical?'':'selected'}>${tr('水平','Horizontal')}</option><option value="v" ${vertical?'selected':''}>${tr('垂直','Vertical')}</option></select></label>
+  </div><div class="actions"><button class="btn danger" id="aDel">${tr('删除墙体','Delete wall')}</button><button class="btn" id="back">${tr('← 返回','← Back')}</button></div></section>`;
+}
+function bindWallPanel(w){
+  const upd=fn=>mutate(()=>{const g=getAddedWall(w.id);if(g)fn(g);});
+  const num=(id,fn)=>$(id).onchange=e=>{const v=parseFloat(e.target.value);if(Number.isFinite(v))upd(g=>fn(g,v));};
+  num('#wX',(g,v)=>{const d=v-g.x0;g.x0+=d;g.x1+=d;}); num('#wY',(g,v)=>{const d=v-g.y0;g.y0+=d;g.y1+=d;});
+  num('#wL',(g,v)=>{v=Math.max(100,Math.round(v));if(g.x0===g.x1)g.y1=g.y0+(g.y1>=g.y0?1:-1)*v;else g.x1=g.x0+(g.x1>=g.x0?1:-1)*v;});
+  num('#wT',(g,v)=>g.thickness=Math.max(50,Math.min(1000,Math.round(v)))); num('#wH',(g,v)=>g.height=Math.max(100,Math.min(10000,Math.round(v))));
+  $('#wDir').onchange=e=>upd(g=>{const L=Math.hypot(g.x1-g.x0,g.y1-g.y0);if(e.target.value==='v'){g.x1=g.x0;g.y1=g.y0+L;}else{g.x1=g.x0+L;g.y1=g.y0;}});
+  $('#aDel').onclick=deleteSel; $('#back').onclick=()=>select(null);
+}
+function doorPanel(d){return `<section><h3>${tr('安装门属性','Door')}</h3><div class="form"><label>中心 X (mm)<input type="number" id="dX" value="${Math.round(d.x)}" step="10"></label><label>中心 Y (mm)<input type="number" id="dY" value="${Math.round(d.y)}" step="10"></label><label>${tr('门宽','Width')} (mm)<input type="number" id="dW" value="${d.width}" min="500" max="2400" step="10"></label><label>${tr('方向','Orientation')}<select id="dV"><option value="h" ${d.vertical?'':'selected'}>水平</option><option value="v" ${d.vertical?'selected':''}>竖直</option></select></label><label>${tr('开口方向','Swing')}<select id="dS"><option value="left" ${d.openSide==='left'?'selected':''}>左开</option><option value="right" ${d.openSide==='right'?'selected':''}>右开</option></select></label></div><div class="actions"><button class="btn danger" id="aDel">${tr('删除门','Delete door')}</button><button class="btn" id="back">← ${tr('返回','Back')}</button></div></section>`;}
+function bindDoorPanel(d){const upd=fn=>mutate(()=>{const g=getAddedDoor(d.id);if(g)fn(g);});const num=(id,fn)=>$(id).onchange=e=>{const v=parseFloat(e.target.value);if(Number.isFinite(v))upd(g=>fn(g,v));};num('#dX',(g,v)=>g.x=v);num('#dY',(g,v)=>g.y=v);num('#dW',(g,v)=>g.width=Math.max(500,Math.min(2400,Math.round(v))));$('#dV').onchange=e=>upd(g=>g.vertical=e.target.value==='v');$('#dS').onchange=e=>upd(g=>g.openSide=e.target.value);$('#aDel').onclick=deleteSel;$('#back').onclick=()=>select(null);}
+
 /* ======================= 操作 ======================= */
 function select(sel){ ui.sel = sel; renderSel(); renderPanel(); }
 function rotateSel(d){ if (ui.sel?.kind==='furn') mutate(() => { const f = getF(ui.sel.id); f.rot = norm(f.rot + d); }); }
-function deleteSel(){ if(ui.sel?.kind==='opening')return removeOpening(ui.sel.id); if (ui.sel?.kind==='furn'){ const id = ui.sel.id; ui.sel = null; mutate(() => state.furniture = state.furniture.filter(f => f.id !== id)); } }
+function deleteSel(){ if(ui.sel?.kind==='opening')return removeOpening(ui.sel.id); if(ui.sel?.kind==='wall'){const id=ui.sel.id;ui.sel=null;return mutate(()=>state.addedWalls=state.addedWalls.filter(w=>w.id!==id));} if(ui.sel?.kind==='addedDoor'){const id=ui.sel.id;ui.sel=null;return mutate(()=>state.addedDoors=state.addedDoors.filter(d=>d.id!==id));} if (ui.sel?.kind==='furn'){ const id = ui.sel.id; ui.sel = null; mutate(() => state.furniture = state.furniture.filter(f => f.id !== id)); } }
 function duplicateSel(){
   if (ui.sel?.kind !== 'furn') return;
   const f = getF(ui.sel.id), n = {...f, id:uid(), cx:f.cx+200, cy:f.cy+200};
@@ -1007,7 +1062,7 @@ function toggleWall(id){
 }
 
 function setTool(t){
-  ui.tool = t; ui.mA = null; ui.mCur = null;
+  ui.tool = t; ui.mA = null; ui.mCur = null; ui.wallA = null; ui.wallCur = null;
   svg.setAttribute('class', 'tool-' + t);
   document.querySelectorAll('#tools .btn').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   syncModeHint();
@@ -1017,7 +1072,8 @@ function syncModeHint(){
   const hints = {select:'',
     measure:COARSE ? tr('按住拖出测量线，或依次点两点 · 靠近墙面自动吸附 · 点「选择」退出', 'Hold and drag a line, or tap two points · snaps to walls · tap "Select" to exit')
       : tr('点击两点（或按住拖动）测量距离 · 靠近墙面自动吸附 · Shift 锁定水平/垂直 · Esc 取消', 'Click two points (or drag) to measure · snaps to walls · Shift locks horizontal/vertical · Esc cancels'),
-    demolish:tr('点击薄隔墙或门拆除 · 在右侧已拆除列表恢复，或撤销 · 黑色承重墙不可拆', 'Click a thin partition or door to remove it · restore from the removed list or undo · black bearing walls cannot be removed')};
+    demolish:tr('点击薄隔墙或门拆除 · 在右侧已拆除列表恢复，或撤销 · 黑色承重墙不可拆', 'Click a thin partition or door to remove it · restore from the removed list or undo · black bearing walls cannot be removed'),
+    build:tr('点击或拖动确定墙体起点和终点 · 自动保持水平或垂直 · 建好后在属性面板精确修改', 'Click or drag from start to end · wall stays horizontal or vertical · edit exact dimensions in Properties'),door:tr('点击平面图放置门 · 选中后在属性面板调整门宽、方向和左开/右开','Click to place a door · edit width, orientation and swing in Properties')};
   const h = $('#modehint'); h.textContent = hints[ui.tool]; h.classList.toggle('show', !!hints[ui.tool]);
 }
 
@@ -1074,6 +1130,8 @@ function snapPoint(p, shift){
   if (shift && ui.mA){ if (Math.abs(x-ui.mA.x) > Math.abs(y-ui.mA.y)) y = ui.mA.y; else x = ui.mA.x; }
   return {x, y};
 }
+function orthogonalPoint(a,p){ return Math.abs(p.x-a.x)>=Math.abs(p.y-a.y)?{x:p.x,y:a.y}:{x:a.x,y:p.y}; }
+function finishWall(a,p){const b=orthogonalPoint(a,p),L=Math.hypot(b.x-a.x,b.y-a.y);ui.wallA=ui.wallCur=null;if(L<100){renderMeasure();return;}const w={id:uid(),x0:a.x,y0:a.y,x1:b.x,y1:b.y,thickness:100,height:2800};ui.sel={kind:'wall',id:w.id};mutate(()=>{state.addedWalls ||= [];state.addedWalls.push(w);});toast(tr(`已新建 ${Math.round(L)} mm 墙体`,`Built ${Math.round(L)} mm wall`));}
 
 /* ======================= 指针交互 ======================= */
 let drag = null, pinch = null;
@@ -1094,6 +1152,11 @@ function endDrag(cancel){
     }
     renderMeasure(); return;                   // 没拖动：保留起点，等第二次点击
   }
+  if(d.kind==='build'){
+    if(cancel){ui.wallA=ui.wallCur=null;renderMeasure();return;}
+    if(d.moved&&ui.wallA&&ui.wallCur)finishWall(ui.wallA,ui.wallCur);
+    renderMeasure();return;
+  }
   if (d.kind === 'pan'){
     if (!cancel && !d.moved && ui.tool === 'select') select(d.room ? {kind:'room', id:d.room} : null);
     return;
@@ -1108,7 +1171,7 @@ svg.addEventListener('pointerdown', e => {
     touches.set(e.pointerId, {x:e.clientX, y:e.clientY});
     svg.setPointerCapture(e.pointerId);
     if (touches.size >= 2){                    // 第二根手指落下：取消单指操作，进入双指缩放 / 平移
-      endDrag(drag?.kind === 'measure' || drag?.kind === 'pan');
+      endDrag(drag?.kind === 'measure' || drag?.kind === 'build' || drag?.kind === 'pan');
       const {d, c} = pinchInfo();
       pinch = {d, c, s:view.s, px:view.x0 + c[0]/view.s, py:view.y0 + c[1]/view.s};
       return;
@@ -1122,9 +1185,20 @@ svg.addEventListener('pointerdown', e => {
     else { const a = ui.mA; ui.mA = null; ui.mCur = null; if (Math.hypot(q.x-a.x, q.y-a.y) > 20) mutate(() => state.measures.push({a, b:q})); }
     renderMeasure(); return;
   }
+  if(ui.tool==='build'){
+    const q=snapPoint(p,false);
+    if(!ui.wallA){ui.wallA=q;ui.wallCur=q;drag={kind:'build',sx:e.clientX,sy:e.clientY,moved:false};svg.setPointerCapture(e.pointerId);}
+    else finishWall(ui.wallA,q);
+    renderMeasure();return;
+  }
+  if(ui.tool==='door'){const q=snapPoint(p,false),d={id:uid(),x:q.x,y:q.y,width:900,vertical:false,openSide:'left'};ui.sel={kind:'addedDoor',id:d.id};mutate(()=>{state.addedDoors ||= [];state.addedDoors.push(d);});setTool('select');toast(tr('已安装门，可在属性面板设置开口方向','Door placed; set swing direction in Properties'));return;}
   const h = t.closest('[data-handle]');
   if (h && ui.sel?.kind === 'furn'){
     drag = {kind:h.dataset.handle, id:ui.sel.id, sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
+  } else if(ui.tool==='select' && t.closest('[data-added-wall]')){
+    select({kind:'wall',id:t.closest('[data-added-wall]').dataset.addedWall});return;
+  } else if(ui.tool==='select' && t.closest('[data-added-door]')){
+    const d=getAddedDoor(t.closest('[data-added-door]').dataset.addedDoor);select({kind:'addedDoor',id:d.id});drag={kind:'doorMove',id:d.id,sx:e.clientX,sy:e.clientY,ox:p.x-d.x,oy:p.y-d.y,before:snap(),moved:false};
   } else if(t.closest('[data-opening]') && (ui.tool==='select' || ui.tool==='demolish')){
     const id=t.closest('[data-opening]').dataset.opening; if(ui.tool==='demolish')removeOpening(id);else select({kind:'opening',id});return;
   } else if (ui.tool === 'demolish' && t.closest('[data-wall]')){
@@ -1161,11 +1235,13 @@ svg.addEventListener('pointermove', e => {
     if (far) drag.moved = true;
     ui.mCur = snapPoint(p, e.shiftKey); renderMeasure(); return;
   }
+  if(drag.kind==='build'){if(far)drag.moved=true;ui.wallCur=snapPoint(p,false);renderMeasure();return;}
   if (drag.kind === 'pan'){
     if (!drag.moved && !far) return;
     drag.moved = true; svg.classList.add('panning');
     view.x0 = drag.x0 - (e.clientX-drag.sx)/view.s; view.y0 = drag.y0 - (e.clientY-drag.sy)/view.s; applyView(); return;
   }
+  if(drag.kind==='doorMove'){if(!drag.moved&&!far)return;drag.moved=true;const d=getAddedDoor(drag.id);if(d){snapDoor(d,p.x-drag.ox,p.y-drag.oy);renderOpenings();}return;}
   const f = getF(drag.id); if (!f) return;
   if (!drag.moved && !far) return;             // 轻点家具不应让它抖动一下
   drag.moved = true;
@@ -1201,7 +1277,7 @@ svg.addEventListener('wheel', e => {
   zoomAt(view.s*Math.exp(-e.deltaY*(e.ctrlKey ? .01 : .0015)), e.clientX-r.left, e.clientY-r.top);
 }, {passive:false});
 svg.addEventListener('dblclick', e => { if (ui.tool==='select' && e.target.closest('[data-fid]')) rotateSel(90); });
-svg.addEventListener('contextmenu', e => { if (ui.tool==='measure'){ e.preventDefault(); ui.mA = null; renderMeasure(); } });
+svg.addEventListener('contextmenu', e => { if (ui.tool==='measure'||ui.tool==='build'){ e.preventDefault(); ui.mA = ui.mCur = ui.wallA = ui.wallCur = null; renderMeasure(); } });
 
 
 /* ======================= 键盘 ======================= */
@@ -1220,10 +1296,12 @@ document.addEventListener('keydown', e => {
   else if (k === 'v') setTool('select');
   else if (k === 'm') setTool('measure');
   else if (k === 'x') setTool('demolish');
+  else if (k === 'w') setTool('build');
+  else if (k === 'd') setTool('door');
   else if (k === 'f') fitView();
   else if (k === 'r') rotateSel(e.shiftKey ? -90 : 90);
   else if (k === 'delete' || k === 'backspace'){ e.preventDefault(); deleteSel(); }
-  else if (k === 'escape'){ if (ui.mA){ ui.mA = null; renderMeasure(); } else { if (ui.tool !== 'select') setTool('select'); select(null); } }
+  else if (k === 'escape'){ if (ui.mA||ui.wallA){ ui.mA=ui.mCur=ui.wallA=ui.wallCur=null; renderMeasure(); } else { if (ui.tool !== 'select') setTool('select'); select(null); } }
   else if (k.startsWith('arrow') && ui.sel?.kind === 'furn'){
     e.preventDefault(); const st = e.shiftKey ? 100 : 10;
     mutate(() => { const f = getF(ui.sel.id); if (k==='arrowleft') f.cx -= st; if (k==='arrowright') f.cx += st; if (k==='arrowup') f.cy -= st; if (k==='arrowdown') f.cy += st; });
@@ -2217,9 +2295,9 @@ function buildArch(){
   [...DOORS, ...SLIDES].forEach(d => { const [x0, y0, x1, y1] = d.rect; const s = box(M(x1-x0), .012, M(y1-y0), mat('#d8d0c0', {roughness:.3}), wx((x0+x1)/2), 0, wz((y0+y1)/2)); s.castShadow = false; archFloor.add(s); });
   WALLS.forEach((w, i) => {
     if (state.demolished.includes('w'+i)) return;
-    wallBox(w, 0, w[4] === 'low' ? Math.min(1, top) : top);
-    colliders.push([wx(w[0]), wz(w[1]), wx(w[2]), wz(w[3])]);
+    const h=w[4]==='low'?Math.min(1,top):top,parts=wallDoorPieces(w);parts.pieces.forEach(r=>{wallBox(r,0,h);colliders.push([wx(r[0]),wz(r[1]),wx(r[2]),wz(r[3])]);});parts.holes.forEach(r=>wallBox(r,2.1,h));
   });
+  (state.addedWalls || []).forEach(w=>{const topWall=Math.min(top,w.height/1000),parts=wallDoorPieces(addedWallRect(w));parts.pieces.forEach(r=>{wallBox(r,0,topWall);colliders.push([wx(r[0]),wz(r[1]),wx(r[2]),wz(r[3])]);});parts.holes.forEach(r=>wallBox(r,2.1,topWall));});
   // 门洞、飘窗洞口上方过梁
   [...liveDoors().map(d => [d.rect, 2.1]), ...liveSlides().map(s => [s.rect, s.v ? 2.4 : 2.1]), ...(currentPlan.lintels || []).map(l => [l.rect,l.height/1000])]
     .forEach(([r, h]) => { if (top > h) wallBox(r, h, top); });
@@ -2235,14 +2313,14 @@ function buildArch(){
       mu.position.set(cx + (hz ? t : 0), sill + gh/2, cz + (hz ? 0 : t)); mu.castShadow = true; archUp.add(mu); }
     [sill + .02, gTop - .02].forEach(y => { const tr = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .06, .04, hz ? .06 : L), frameMat); tr.position.set(cx, y, cz); archUp.add(tr); });
   });
-  DOORS.forEach((d,i) => {
-    if(openingRemoved('d'+i))return;
+  [...DOORS.map((d,i)=>({...d,originalId:'d'+i})),...(state.addedDoors||[]).map(addedDoorGeometry)].forEach(d => {
+    if(d.originalId&&openingRemoved(d.originalId))return;
     const pivot = new THREE.Group(), L = M(d.len), dh = Math.min(2.05, top);
     pivot.position.set(wx(d.h[0]), 0, wz(d.h[1]));
     const leaf = box(L, dh, .04, mat(d.entry ? '#6b4f3a' : '#efe6d8', {roughness:.5}), L/2);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), metal()); knob.position.set(L - .07, Math.min(1, dh - .05), 0); knob.scale.z = 2.2;
     pivot.add(leaf, knob);
-    const ang = v => Math.atan2(-v[1], v[0]), door = {id:'d'+i,pivot, a0:ang(d.c), a1:ang(d.o), open:true};
+    const ang = v => Math.atan2(-v[1], v[0]), door = {id:d.originalId||d.id,pivot, a0:ang(d.c), a1:ang(d.o), open:true};
     if (door.a1 - door.a0 > Math.PI) door.a1 -= Math.PI*2; if (door.a0 - door.a1 > Math.PI) door.a1 += Math.PI*2;
     door.cur = door.a1; pivot.rotation.y = door.cur; leaf.userData.door = knob.userData.door = door;
     doors.push(door); archUp.add(pivot);
@@ -2286,7 +2364,7 @@ function buildLabels(){
 // 只重建变化的部分
 function sync(force){
   if (!inited || (!active && !force)) return;
-  const a = JSON.stringify([state.rooms, state.demolished, state.removedOpenings, opt.cut]), f = JSON.stringify(state.furniture), l = JSON.stringify([state.rooms, opt.cut]);
+  const a = JSON.stringify([state.rooms, state.demolished, state.removedOpenings, state.addedWalls, state.addedDoors, opt.cut]), f = JSON.stringify(state.furniture), l = JSON.stringify([state.rooms, opt.cut]);
   if (force || a !== sigArch){ sigArch = a; buildArch(); }
   if (force || f !== sigFurn){ sigFurn = f; buildFurn(); }
   if (force || l !== sigLabels){ sigLabels = l; buildLabels(); }

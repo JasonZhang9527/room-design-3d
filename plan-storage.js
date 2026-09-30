@@ -34,10 +34,15 @@ function normalizeDesign(s,p){
   const demolished=(s.demolished || []).filter(id=>typeof id==='string' && /^w\d+$/.test(id) && p.walls[+id.slice(1)]?.[4]==='n');
   assertData(!s.removedOpenings || Array.isArray(s.removedOpenings),'门拆除数据无效');
   const removedOpenings=[...new Set((s.removedOpenings || []).filter(id=>typeof id==='string' && /^[ds]\d+$/.test(id) && (id[0]==='d'?p.doors:p.slides)[+id.slice(1)]))];
+  assertData(!s.addedWalls || Array.isArray(s.addedWalls),'新建墙体数据无效');
+  const wallIds=new Set(),addedWalls=copyData(s.addedWalls || []);
+  addedWalls.forEach(w=>{assertData(w&&typeof w.id==='string'&&!wallIds.has(w.id)&&['x0','y0','x1','y1','thickness','height'].every(k=>Number.isFinite(w[k]))&&((w.x0===w.x1) !== (w.y0===w.y1))&&Math.hypot(w.x1-w.x0,w.y1-w.y0)>=100&&w.thickness>=50&&w.thickness<=1000&&w.height>=100&&w.height<=10000,'新建墙体数据无效');wallIds.add(w.id);});
+  assertData(!s.addedDoors || Array.isArray(s.addedDoors),'安装门数据无效');
+  const doorIds=new Set(),addedDoors=copyData(s.addedDoors || []); addedDoors.forEach(d=>{assertData(d&&typeof d.id==='string'&&!doorIds.has(d.id)&&[d.x,d.y,d.width].every(Number.isFinite)&&d.width>=500&&d.width<=2400&&typeof d.vertical==='boolean'&&['left','right'].includes(d.openSide),'安装门数据无效');doorIds.add(d.id);});
   assertData(!s.measures || Array.isArray(s.measures),'测量数据无效');
   const measures=copyData(s.measures || []);
   measures.forEach(m=>assertData(m && [m.a?.x,m.a?.y,m.b?.x,m.b?.y].every(Number.isFinite),'测量数据无效'));
-  return {furniture,rooms,demolished,removedOpenings,measures};
+  return {furniture,rooms,demolished,removedOpenings,addedWalls,addedDoors,measures};
 }
 function persistDB(){
   try { localStorage.setItem(DESIGN_STORE,JSON.stringify(designDB)); $('#saveStatus').textContent=tr('已保存到本机','Saved locally'); return true; }

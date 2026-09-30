@@ -10,6 +10,7 @@ const tr=(a,b)=>a,esc=s=>s,nm=s=>s;
 function toast(){} function resetDesignUI(){} function download(name,blob){this.exported=blob;} function save(){return saveDesign();}
 `,ctx); // defaultState references ROOMS only when called
 ctx.nodes=nodes;
+vm.runInContext(html.slice(html.indexOf('const getAddedDoor ='),html.indexOf('// Stable IDs')),ctx);
 vm.runInContext(fs.readFileSync('plan-storage.js','utf8')+'\nresetDesignUI=()=>{};',ctx);
 vm.runInContext(html.slice(html.indexOf('const openingRemoved ='),html.indexOf('/* ======================= 几何工具'))+html.slice(html.indexOf('function renderWalls()'),html.indexOf('function renderLabels()')),ctx);
 async function run(code){return vm.runInContext(code.includes('await ')?`(async()=>{${code}})()`:code,ctx);}
