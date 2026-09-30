@@ -1,6 +1,6 @@
 # 户型装修设计
 
-纯前端的户型装修设计工具：在 2D 平面图上摆放家具、拆改墙体、测量尺寸，一键切换到 Three.js 3D 场景，可以鸟瞰，也可以第一人称漫游。整个应用就是一个 `index.html`，无需构建，打开即用。
+纯前端的户型装修设计工具：在 2D 平面图上摆放家具、拆改墙体、测量尺寸，一键切换到 Three.js 3D 场景，可以鸟瞰，也可以第一人称漫游。无需构建，使用静态服务器运行；户型数据保存在 `floorplans/`，方案管理在 `plan-storage.js`。
 
 ## 功能
 
@@ -33,7 +33,7 @@ git clone <仓库地址>
 cd <仓库目录>
 ```
 
-然后直接用浏览器打开 `index.html`。也可以起一个本地静态服务器：
+在项目目录启动本地静态服务器（不能双击 HTML 使用 file://，浏览器会阻止读取 JSON）：
 
 ```bash
 python3 -m http.server 8000
@@ -66,14 +66,46 @@ python3 -m http.server 8000
 - 3D 场景用 [Three.js](https://threejs.org/) r160（OrbitControls、PointerLockControls、RoundedBoxGeometry、RoomEnvironment、CSS2DRenderer）
 - 数据保存在 `localStorage`
 
-## 自定义户型
+## 多户型和装修方案
 
-户型数据写在 `index.html` 里：
+顶栏选择户型、打开已保存方案，点击“另存方案”输入名称创建独立副本。“保存方案”立即保存，家具、材料、拆墙、测量、撤销/重做都会自动保存。每个户型独立保存多个方案；切换时清空选择、测量中的临时点和撤销历史，重新生成二维门窗与三维建筑、家具、标签、房间列表和镜头。
 
-- `ROOMS`：房间多边形、名称、默认地面材料
-- `WALLS` / `WINS`：墙体与窗洞
-- `MATS`：地面材料名称与单价
-- `LIB`：家具库（类型、名称、默认尺寸、颜色）
-- `buildFurniture()`：各类家具的 3D 模型
+“拆改墙体”工具可点击薄隔墙或门进行拆除，二维图不再保留拆墙虚线。选择模式下点门可通过“删除门及过梁”按钮或 Delete 删除；三维平开门点选后也可使用该按钮。删除门会同时移除门洞上方过梁，推拉门可在二维中删除。拆除记录保存在方案的 `demolished` 和 `removedOpenings`（`d0` 对应 doors 第一个门，`s0` 对应 slides 第一个推拉门），支持撤销/重做、自动保存和 JSON 备份。在空白处取消选择后，可从属性面板“已拆除”列表逐项恢复。
 
-改这些数据就能换成自己的户型。
+旧版本本机的 `huxing-design-v1` 数据首次自动迁移到原户型默认方案，原键保留。旧版 JSON 没有户型身份，导入时确认后只按原始户型导入为新方案。新版 JSON 包含 `format: room-design-plan`、`version: 2`、完整 `floorplan`、`design.name` 和 `design.state`，无需网站登记该户型也可恢复。导入始终新增方案；同 ID 不同结构建立独立本地户型副本。
+
+数据位于浏览器 localStorage 的 `huxing-designs-v2`。不同浏览器、设备、域名和端口分别保存；本地预览与 GitHub Pages 不共享。清除站点数据会删除本地方案。请逐个方案通过“文件 → 导出方案 JSON”备份，跨设备或域名通过导入恢复。保存失败会显示提示，此时先导出备份。原有方案采用保存时的户型快照；更新同 ID 的户型文件不会把已有设计套到新的结构上。几何结构变动建议使用新 ID 登记。仅修正墙体类型和说明、且提高 revision 时，坐标与数组顺序完全一致的已有户型会自动更新，保留家具、材料和命名方案；已不允许拆除的墙会从拆墙记录中移除。
+
+## 添加户型
+
+图片转换的完整规则见 **[户型图片 → JSON 转换规范](docs/FLOORPLAN_CONVERSION.md)**。该文档包含尺寸标定与冲突处理、厚外墙/薄内墙分类、门窗和过梁建模、全部字段及单位、版本兼容、验证步骤，以及可复制给其他 AI 的任务描述。换其他工具转换时，可直接提供此文档和 `floorplans/studio.json` 示例。
+
+已加入 `two-bedroom-balcony.json`（两室一厅一卫、带阳台），根据提供的图片重建。顶部总宽为 7891 mm，底部尺寸之和为 7951 mm，相差 60 mm；模型优先顶部总宽，保留阳台 3035 mm 净宽。内部墙厚暂按 120 mm、外墙按 200 mm，局部门窗和卫生间凹角按图估算，因此计算面积与图片文字可能不同。根据用户确认，厚外墙不可拆，内部房间之间的薄隔墙可以拆改。详细假设记录在该文件的 `sourceNotes`，可按后续实测数据校正；层高沿用项目的 2.8 m。
+
+1. 在 `floorplans/` 新建 UTF-8 JSON，可参考 `studio.json`（最小单间演示）和 `original.json`（完整原户型）。
+2. 在 `floorplans/list.json` 的 `floorplans` 数组增加 `{"id":"my-home","name":"我的户型","file":"my-home.json"}`，列表 ID 必须与文件 ID 一致。`default` 指定首次打开的户型。
+3. 新户型无需修改渲染逻辑。后续提供户型图片及尺寸即可生成这些文件。此版本不包含图片上传、自动识别或手动画墙。
+
+所有平面坐标、家具尺寸、门宽、窗台高度、过梁高度单位为 **mm**，面积自动换算为 m²。X 向右，Y 向下，原点可自行选择；层高目前统一为 2.8 m。
+
+| 字段 | 格式及用途 |
+| --- | --- |
+| `schemaVersion`, `id`, `name`, `revision`, `units` | 版本固定 1，唯一稳定 ID（英文字母/数字/下划线/连字符），显示名称，修订号，单位固定 `mm` |
+| `rooms` | `{id,name,poly:[[x,y],...],mat,at:[x,y],counted}`；多边形至少三个点，`at` 为可选标签/灯位置，`counted:false` 排除套内面积（如飘窗） |
+| `walls` | `[x0,y0,x1,y1,type]` 矩形，终点大于起点；`b` 承重、`e` 外墙、`n` 可拆、`low` 矮墙；拆墙引用数组下标 `w0` 等，已有方案的墙体顺序不可随意调整 |
+| `windows` | `[x0,y0,x1,y1]` 窗洞矩形 |
+| `windowHeights` | 可选，按窗数组对应 `[窗台高度,窗顶高度]`，默认 `[900,2400]` |
+| `doors` | `{name,rect:[x0,y0,x1,y1],h:[铰点x,铰点y],c:[dx,dy],o:[dx,dy],len,entry}`；`c/o` 为关闭/开启方向单位向量，`entry:true` 表示入户门 |
+| `slides` | `{rect:[x0,y0,x1,y1],v:true/false}`；竖向/横向推拉门 |
+| `lintels` | 可选额外过梁 `{rect:[x0,y0,x1,y1],height}`；门洞过梁自动生成 |
+| `dimensions` | 可选尺寸链 `[水平布尔值,标注线坐标,起点坐标,[分段长度,...]]` |
+| `furniture` | 默认家具 `{id,type,name,cx,cy,w,d,rot,color}`；中心坐标、宽深 mm、角度 deg、十六进制颜色；`type` 从源码 `LIB` 家具库选择 |
+| `walkStart`, `walkLook` | 可选漫游起点与朝向目标 `[x,y]`，起点应放在可通行位置 |
+
+`mat` 从源码 `MATS` 选择：`wood`、`walnut`、`tile800`、`tile600`、`marble`、`antislip`、`terrazzo`、`carpet`。家具库和材料定义继续由 `index.html` 统一提供。墙体应预先在门窗位置留洞，避免与门窗重复覆盖。加载器会校验必需字段、坐标和引用。
+
+## 验证与 GitHub Pages 更新
+
+运行 `node scripts/verify.cjs` 进行脚本语法、户型数据、方案隔离、导入恢复及存储故障验证。启动 `python -m http.server 8000` 后访问 http://localhost:8000，检查两个户型的二维/三维、方案另存、切换、刷新恢复及导入导出。Three.js 首次加载需要联网。
+
+在 IDEA 的 Commit 窗口查看并勾选 `index.html`、`plan-storage.js`、`floorplans/`、`README.md` 和 `scripts/verify.cjs`，填写提交信息（例如 `Add multiple floorplans and named local designs`），点击 Commit。检查 Push 目标为你自己的 Fork 及 GitHub Pages 使用的分支，再通过 Git → Push 推送。沿用已配置的 Pages 发布目录，等待仓库部署任务成功后刷新站点；若缓存旧文件可强制刷新。方案数据仅保存在浏览器，不会随 Commit/Push 上传。

@@ -1,0 +1,20 @@
+{
+  "default": "original",
+  "floorplans": [
+    {
+      "id": "original",
+      "name": "原始三室两厅两卫",
+      "file": "original.json"
+    },
+    {
+      "id": "studio",
+      "name": "演示单间 · 24 m²",
+      "file": "studio.json"
+    },
+    {
+      "id": "two-bedroom-balcony",
+      "name": "东林苑·两室双南户型",
+      "file": "two-bedroom-balcony.json"
+    }
+  ]
+}
