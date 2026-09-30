@@ -15,6 +15,16 @@
       "id": "two-bedroom-balcony",
       "name": "东林苑·两室双南户型",
       "file": "two-bedroom-balcony.json"
+    },
+    {
+      "id": "two-bedroom-long-layout",
+      "name": "两室一厅 · 南北长条户型",
+      "file": "two-bedroom-long-layout.json"
+    },
+    {
+      "id": "three-bedroom-stepped-layout",
+      "name": "三室一厅 · 双南卧户型",
+      "file": "three-bedroom-stepped-layout.json"
     }
   ]
 }
