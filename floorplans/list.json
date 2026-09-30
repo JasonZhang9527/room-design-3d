@@ -25,6 +25,11 @@
       "id": "three-bedroom-stepped-layout",
       "name": "三室一厅 · 双南卧户型",
       "file": "three-bedroom-stepped-layout.json"
+    },
+    {
+      "id": "two-bedroom-l-balcony",
+      "name": "两室一厅 · L形阳台户型",
+      "file": "two-bedroom-l-balcony.json"
     }
   ]
 }
