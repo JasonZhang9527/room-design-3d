@@ -30,6 +30,11 @@
       "id": "two-bedroom-l-balcony",
       "name": "两室一厅 · L形阳台户型",
       "file": "two-bedroom-l-balcony.json"
+    },
+    {
+      "id": "two-bedroom-bay-20261004",
+      "name": "绿荫苑两室一厅 · 户型",
+      "file": "two-bedroom-bay-20261004.json"
     }
   ]
 }
