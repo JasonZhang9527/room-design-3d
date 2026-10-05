@@ -35,6 +35,16 @@
       "id": "two-bedroom-bay-20261004",
       "name": "绿荫苑两室一厅 · 户型",
       "file": "two-bedroom-bay-20261004.json"
+    },
+    {
+      "id": "three-bedroom-double-bay",
+      "name": "三室一厅 · 双凸窗阳台户型",
+      "file": "three-bedroom-double-bay.json"
+    },
+    {
+      "id": "two-bedroom-study-bay",
+      "name": "两室一厅带书房 · 双凸窗户型",
+      "file": "two-bedroom-study-bay.json"
     }
   ]
 }
