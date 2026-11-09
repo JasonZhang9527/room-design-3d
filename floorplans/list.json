@@ -45,6 +45,11 @@
       "id": "two-bedroom-study-bay",
       "name": "两室一厅带书房 · 双凸窗户型",
       "file": "two-bedroom-study-bay.json"
+    },
+    {
+      "id": "two-bedroom-lianjia-6689",
+      "name": "两室一厅 · 南向阳台户型",
+      "file": "two-bedroom-lianjia-6689.json"
     }
   ]
 }
