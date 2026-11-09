@@ -80,6 +80,11 @@ function upgradeWallClassification(b,p){
   const designs=Object.fromEntries(Object.entries(b.designs).map(([id,d])=>[id,{...d,state:normalizeDesign(d.state,p)}]));
   b.floorplan=copyData(p);b.designs=designs;return true;
 }
+function upgradePlanStructure(b,p){
+  if(!b || !(p.revision>b.floorplan.revision))return false;
+  const designs=Object.fromEntries(Object.entries(b.designs).map(([id,d])=>[id,{...d,state:normalizeDesign(d.state,p)}]));
+  b.floorplan=copyData(p);b.designs=designs;return true;
+}
 async function switchPlan(id){
   if(changingPlan)return;
   if($('#stage').classList?.contains('animating'))throw new Error('请等待二维/三维切换完成');
@@ -91,7 +96,7 @@ async function switchPlan(id){
     let b=designDB.plans[id];
     // Only adopt a newer classification when every coordinate and array index matches.
     // Keep saved snapshots for structural revisions so furniture and demolition IDs remain valid.
-    upgradeWallClassification(b,p);
+    if(id==='two-bedroom-lianjia-6689')upgradePlanStructure(b,p);else upgradeWallClassification(b,p);
     installPlan(b?validatePlan(b.floorplan):p);
     if(!b){ b={floorplan:copyData(currentPlan),active:'default',designs:{default:{name:'默认方案',state:defaultState()}}}; designDB.plans[id]=b;
       if(id==='original'){try{const old=JSON.parse(localStorage.getItem(STORE));if(old)b.designs.default.state=normalizeDesign(old,currentPlan);}catch(e){toast('旧方案无法迁移，原存储已保留');}}
