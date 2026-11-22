@@ -50,6 +50,11 @@
       "id": "two-bedroom-lianjia-6689",
       "name": "两室一厅 · 南向阳台户型",
       "file": "two-bedroom-lianjia-6689.json"
+    },
+    {
+      "id": "two-bedroom-lianjia-20261122-north-door",
+      "name": "两室一厅 · 北厨南阳台户型（卧室北门版）",
+      "file": "two-bedroom-lianjia-20261122-north-door.json"
     }
   ]
 }
