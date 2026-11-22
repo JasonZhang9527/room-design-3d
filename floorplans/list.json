@@ -52,9 +52,14 @@
       "file": "two-bedroom-lianjia-6689.json"
     },
     {
-      "id": "two-bedroom-lianjia-20261122-north-door",
-      "name": "两室一厅 · 北厨南阳台户型（卧室北门版）",
-      "file": "two-bedroom-lianjia-20261122-north-door.json"
+      "id": "two-bedroom-lianjia-20261122-full-windows",
+      "name": "两室一厅 · 北厨南阳台户型（三面飘窗版）",
+      "file": "two-bedroom-lianjia-20261122-full-windows.json"
+    },
+    {
+      "id": "two-bedroom-double-bay-20261122-bedroom-a-wall",
+      "name": "两室一厅 · 双凸窗斜边阳台户型（卧室A隔墙版）",
+      "file": "two-bedroom-double-bay-20261122-bedroom-a-wall.json"
     }
   ]
 }
